@@ -157,7 +157,7 @@ function recompute(){
  CNT=zero();batches.filter(b=>b.t>resetT).forEach(b=>CATS.forEach(c=>CNT[c.k]+=b.c[c.k]||0));
  render()}
 function apply(st){batches=(st.batches||[]).sort((a,b)=>a.t-b.t);resetT=st.resetT||0;recompute();setSync('online','Tersinkron: data tersimpan di Google Sheets dan sama di semua HP.')}
-const API='PASTE_URL_WEB_APP_DI_SINI';
+const API='https://script.google.com/macros/s/AKfycbzZV_UolC0M9mOJkvQP534WKHSLRnCY79It5yzWGiXZ8Br6fgqFFIn6FNN6jFpXVoP_/exec';
 const call=async(fn,...a)=>{const r=await fetch(API,{method:'POST',redirect:'follow',body:JSON.stringify({fn,pin:PIN,args:a})});const j=await r.json();if(!j.ok)throw new Error(j.error||'Gagal');return j.data};
 function ensurePin(){if(!PIN){const p=prompt('Masukkan PIN aplikasi');if(!p)return false;PIN=p.trim();try{localStorage.setItem(PINK,PIN)}catch(e){}}return true}
 async function rpc(fn,...a){
