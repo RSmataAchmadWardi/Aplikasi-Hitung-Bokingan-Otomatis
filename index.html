@@ -89,6 +89,7 @@ dialog{border:0;border-radius:28px;padding:26px;background:var(--card);color:var
 dialog::backdrop{background:rgba(8,18,30,.6);backdrop-filter:blur(4px)}
 dialog img{width:min(320px,72vw);height:min(320px,72vw);border-radius:50%;box-shadow:0 0 0 6px var(--brand);display:block;margin:6px auto 20px}
 dialog h3{margin:0 0 14px;font-size:18px;font-weight:800}
+.err{background:color-mix(in srgb,var(--baksos) 12%,var(--card));border:1px solid var(--baksos);border-radius:14px;padding:10px 14px;font-size:13px;margin-bottom:12px;word-break:break-word}.err[hidden]{display:none}
 .acts{display:flex;gap:8px;flex-wrap:wrap}
 .btn.sm{width:auto;padding:10px 16px;font-size:14px}
 #pdlg img{width:min(620px,78vw);height:auto;border-radius:14px;box-shadow:0 0 0 1px var(--line);margin:0 auto 12px}
@@ -124,7 +125,7 @@ dialog h3{margin:0 0 14px;font-size:18px;font-weight:800}
     <label for="bulk" class="hint" style="display:block;margin-top:10px">Satu pasien per baris, format nama lalu jenis.</label>
     <textarea id="bulk" placeholder="Budi, BPJS&#10;Sari, Asuransi&#10;Andi, Baksos&#10;Dewi, Umum"></textarea>
     <div class="tags"><i style="--c:#12b886">BPJS</i><i style="--c:#3b82f6">Asuransi</i><i style="--c:#f5a623">Umum</i><i style="--c:#ef4d7a">Baksos</i></div>
-    <button class="btn" id="imp">Hitung data</button>
+    <div id="err" class="err" hidden></div><button class="btn" id="imp">Hitung data</button>
   </section>
 </div>
 
@@ -149,33 +150,52 @@ try{const s=localStorage.getItem('pasien-v2');if(s)data=JSON.parse(s)||[];const 
 const $=id=>document.getElementById(id);
 const save=()=>{try{localStorage.setItem('pasien-v2',JSON.stringify(data));localStorage.setItem('rekap-v1',JSON.stringify(hist))}catch(e){}};
 function toast(t){const e=$('toast');e.textContent=t;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),1900)}
-function norm(t){t=(t||'').toLowerCase();
+function norm(t){t=(t||'').toLowerCase().trim();if(!t)return null;
  if(/bapelkes|posko|bpjsk|ketenagakerjaan|\btk\b/.test(t))return'Umum';
  if(/bpjs|jkn|kis/.test(t))return'BPJS';
  if(/asu|insur|swasta|prudential|allianz|admedika|inhealth/.test(t))return'Asuransi';
  if(/bak|sosial|gratis/.test(t))return'Baksos';
- return'Umum'}
+ if(/umum|pribadi|cash|tunai/.test(t))return'Umum';
+ return null}
+function parseLine(l){const p=l.split(/[,;\t|]/).map(s=>s.trim()).filter(Boolean);let j,nm;
+ if(p.length>1){j=norm(p[p.length-1]);nm=p.slice(0,-1).join(', ')}
+ else{const m=l.trim().match(/^(.*?)\s+(\S+)$/);if(m&&norm(m[2])){j=norm(m[2]);nm=m[1]}else{j=norm(l);nm=''}}
+ return j?{n:nm||'Tanpa nama',j}:null}
+function pcts(n,T){if(!T)return CATS.map(()=>0);const raw=CATS.map(c=>n[c.k]/T*100),fl=raw.map(Math.floor);let r=100-fl.reduce((a,b)=>a+b,0);
+ raw.map((v,i)=>[v-fl[i],i]).sort((a,b)=>b[0]-a[0]).slice(0,r).forEach(([,i])=>fl[i]++);return fl}
+
 function counts(){const o={};CATS.forEach(c=>o[c.k]=0);data.forEach(d=>{if(d.a!==false)o[d.j]++});return o}
 const fd=t=>{const d=new Date(t);return[d.toLocaleDateString('id-ID',{day:'2-digit',month:'2-digit',year:'numeric'}),d.toLocaleDateString('id-ID',{weekday:'long'})]};
 $('today').textContent=new Date().toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 
 function render(){
- const n=counts(),T=Object.values(n).reduce((a,b)=>a+b,0);
+ const n=counts(),T=Object.values(n).reduce((a,b)=>a+b,0),P=pcts(n,T);
  $('mid').textContent=T;
- $('kpis').innerHTML=CATS.map(c=>{const p=T?Math.round(n[c.k]/T*100):0;return`<div class="kpi" style="--c:${c.c}"><div class="kt"><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICO[c.k]}</svg></span><span class="pill">${p}%</span></div><b>${n[c.k]}</b><small>Pasien ${c.k}</small><div class="pg"><i style="width:${p}%"></i></div></div>`}).join('');
+ $('kpis').innerHTML=CATS.map((c,i)=>{const p=P[i];return`<div class="kpi" style="--c:${c.c}"><div class="kt"><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICO[c.k]}</svg></span><span class="pill">${p}%</span></div><b>${n[c.k]}</b><small>Pasien ${c.k}</small><div class="pg"><i style="width:${p}%"></i></div></div>`}).join('');
  let off=0,svg=`<circle cx="21" cy="21" r="15.9155" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="4.4"/>`;
  if(T)CATS.forEach(c=>{const p=n[c.k]/T*100;if(p>0){const l=Math.max(p-(p<100?1.2:0),.1);svg+=`<circle cx="21" cy="21" r="15.9155" fill="none" stroke="${c.c}" stroke-width="4.4" stroke-linecap="butt" stroke-dasharray="${l} ${100-l}" stroke-dashoffset="${-off}"><title>${c.k}: ${n[c.k]}</title></circle>`;off+=p}});
  $('dn').innerHTML=svg;
  const mx=Math.max(1,...Object.values(n));
- $('cols').innerHTML=CATS.map(c=>`<div class="col" style="--c:${c.c}"><span class="v">${n[c.k]}</span><div class="b" style="height:${Math.max(6,n[c.k]/mx*120)}px"></div></div>`).join('');
+ $('cols').innerHTML=CATS.map(c=>`<div class="col" style="--c:${c.c}"><span class="v">${n[c.k]}</span><div class="b" style="height:${(n[c.k]?Math.max(6,n[c.k]/mx*120):0)}px"></div></div>`).join('');
  $('lbls').innerHTML=CATS.map(c=>`<span>${c.k}</span>`).join('');
  $('hc').textContent=hist.length+' rekap';
  $('hist').innerHTML=hist.length?hist.map((h,i)=>{const[a,b]=fd(h.t);const tt=CATS.reduce((s,c)=>s+h.c[c.k],0);return`<tr><td class="no">${i+1}</td><td>${b}</td><td>${a}</td>${CATS.map(c=>`<td class="num">${h.c[c.k]}</td>`).join('')}<td class="num">${tt}</td></tr>`}).reverse().join(''):`<tr><td colspan="8" class="empty">Belum ada rekap. Tempel data di kotak Masukkan data, lalu klik Hitung data.</td></tr>`;
 }
-$('imp').onclick=()=>{const L=$('bulk').value.split('\n').map(s=>s.trim()).filter(Boolean);
+let pend='';
+const HDR=/list\s+pasien|\bno\.?\s*rm\b|\bnama\s+alamat\b/i;
+const esc=t=>String(t).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+function showErr(h){const e=$('err');e.innerHTML=h;e.hidden=!h}
+$('bulk').addEventListener('input',()=>{pend='';showErr('')});
+$('imp').onclick=()=>{const raw=$('bulk').value,L=raw.split('\n').map(s=>s.trim()).filter(Boolean);
  if(!L.length){toast('Tempel datanya dulu');$('bulk').focus();return}
- L.forEach(l=>{const p=l.split(/[,;\t|]/);const j=norm(p.length>1?p[p.length-1]:'');const nm=(p.length>1?p.slice(0,-1).join(', '):p[0]).trim()||'Tanpa nama';data.push({n:nm,j,t:Date.now(),a:true})});
- rec(data.slice(-L.length));$('bulk').value='';save();render();toast(L.length+' pasien dihitung')};
+ const ok=[],bad=[];let skip=0;L.forEach((l,i)=>{if(HDR.test(l)){skip++;return}const r=parseLine(l);r?ok.push(r):bad.push((i+1)+'. '+l)});
+ if(bad.length){showErr('<b>'+bad.length+' baris tidak dikenali, belum ada yang dihitung.</b> Perbaiki lalu klik Hitung data lagi (format: nama, jenis):<br>'+bad.map(esc).join('<br>'));toast(bad.length+' baris tidak dikenali');return}
+ if(!ok.length){toast('Tidak ada data pasien, '+skip+' baris judul diabaikan');return}
+ const seen=new Set(data.filter(d=>d.a!==false).map(d=>d.n.toLowerCase()+'|'+d.j)),dup=[];
+ ok.forEach(r=>{if(r.n==='Tanpa nama')return;const k=r.n.toLowerCase()+'|'+r.j;if(seen.has(k))dup.push(r.n+' ('+r.j+')');seen.add(k)});
+ if(dup.length&&pend!==raw){pend=raw;showErr('<b>Ada nama ganda:</b> '+dup.map(esc).join(', ')+'.<br>Jika memang pasien berbeda, klik Hitung data sekali lagi.');toast('Cek nama ganda');return}
+ const now=Date.now();ok.forEach(r=>data.push({n:r.n,j:r.j,t:now,a:true}));
+ rec(data.slice(-ok.length));pend='';showErr('');$('bulk').value='';save();render();toast(ok.length+' pasien dihitung'+(skip?', '+skip+' baris judul diabaikan':''))};
 $('clr').onclick=()=>{if(hist.length&&confirm('Hapus seluruh riwayat rekap?')){hist=[];save();render()}};
 $('rf').onclick=()=>{if(!data.some(d=>d.a!==false)){toast('Angka sudah 0');return}data.forEach(d=>d.a=false);save();render();toast('Semua angka dikembalikan ke 0')};
 $('lg').onclick=()=>{$('big').src=$('lg').querySelector('img').src;$('dlg').showModal()};
@@ -213,7 +233,7 @@ async function makePng(){
   x.strokeStyle='#e3e9f1';x.lineWidth=1;x.beginPath();x.moveTo(pad,y+rh);x.lineTo(W-pad,y+rh);x.stroke();y+=rh});
  if(rows.length){const sum=CATS.map(c=>rows.reduce((s,h)=>s+h.c[c.k],0)),all=sum.reduce((a,b)=>a+b,0);
   x.fillStyle='#0f2238';x.fillRect(pad,y,W-2*pad,rh);cx=pad;
-  ['','Jumlah','',...sum,all].forEach((t,j)=>{x.textAlign=j===1?'left':'center';x.fillStyle='#fff';x.font='800 15px '+F;if(t!=='')x.fillText(String(t),j===1?cx+14:cx+cw[j]/2,y+rh/2);cx+=cw[j]});}
+  ['',hist.length>rows.length?'Jumlah '+rows.length+' terakhir':'Jumlah','',...sum,all].forEach((t,j)=>{x.textAlign=j===1?'left':'center';x.fillStyle='#fff';x.font='800 15px '+F;if(t!=='')x.fillText(String(t),j===1?cx+14:cx+cw[j]/2,y+rh/2);cx+=cw[j]});}
  else{x.textAlign='center';x.fillStyle='#64748b';x.font='500 15px '+F;x.fillText('Belum ada rekap',W/2,y+35)}
  x.textAlign='center';x.fillStyle='#94a3b8';x.font='500 12px '+F;x.fillText('Dibuat otomatis oleh aplikasi Hitung Otomatis Pasien Bokingan',W/2,H-24);
  return new Promise(r=>cv.toBlob(r,'image/png'));
