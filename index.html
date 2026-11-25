@@ -131,13 +131,13 @@ dialog h3{margin:0 0 14px;font-size:18px;font-weight:800}
 <section class="kpis" id="kpis"></section>
 
 <section class="card">
-  <div class="hh"><h2>Riwayat data masuk<span class="cnt" id="hc">0 rekap</span></h2><div class="acts"><button class="btn sm" id="png"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="1.8"/><path d="M21 16l-5-5-9 9"/></svg>Kirim PNG</button><button class="btn ghost" id="clr">Hapus riwayat</button></div></div>
+  <div class="hh"><h2>Riwayat data masuk<span class="cnt" id="hc">0 rekap</span></h2><div class="acts"><button class="btn sm" id="png"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="1.8"/><path d="M21 16l-5-5-9 9"/></svg>Download PNG</button><button class="btn ghost" id="clr">Hapus riwayat</button></div></div>
   <div class="sheet"><table><thead><tr><th class="c">No</th><th>Hari</th><th>Tanggal</th><th class="c"><i class="dt" style="background:#12b886"></i>BPJS</th><th class="c"><i class="dt" style="background:#3b82f6"></i>Asuransi</th><th class="c"><i class="dt" style="background:#f5a623"></i>Umum</th><th class="c"><i class="dt" style="background:#ef4d7a"></i>Baksos</th><th class="c">Total</th></tr></thead><tbody id="hist"></tbody></table></div>
 </section>
 <footer class="by"><span class="av">HH</span><span>Dibuat oleh <b>Hendri Hermawan</b></span></footer>
 </div>
 <dialog id="dlg"><img id="big" alt="Logo RS Mata Achmad Wardi"><h3>RS Mata Achmad Wardi</h3><button class="btn ghost" id="dx" style="margin:0 auto">Tutup</button></dialog>
-<dialog id="pdlg"><h3>Gambar siap dikirim</h3><img id="pimg" alt="Pratinjau rekap"><p class="hint">Tekan lama gambar, pilih Bagikan atau Simpan, lalu kirim lewat WhatsApp.</p><button class="btn ghost" id="px" style="margin:0 auto">Tutup</button></dialog>
+<dialog id="pdlg"><h3>Gambar siap diunduh</h3><img id="pimg" alt="Pratinjau rekap"><p class="hint">Tekan lama gambar, pilih Bagikan atau Simpan, lalu kirim lewat WhatsApp.</p><button class="btn ghost" id="px" style="margin:0 auto">Tutup</button></dialog>
 <div class="toast" id="toast" role="status"></div>
 
 <script>
@@ -219,11 +219,11 @@ async function makePng(){
  return new Promise(r=>cv.toBlob(r,'image/png'));
 }
 $('png').onclick=async()=>{
- if(!hist.length){toast('Belum ada rekap untuk dikirim');return}
+ if(!hist.length){toast('Belum ada rekap untuk diunduh');return}
  const blob=await makePng();
  const name='rekap-pasien-'+new Date().toISOString().slice(0,10)+'.png';
  let dl=null;try{dl=await claude.use('downloads')}catch(e){}
- if(dl){try{await dl.save({filename:name,data:blob});toast('PNG siap dikirim ke WhatsApp');return}catch(e){if(e&&e.code==='declined')return}}
+ if(dl){try{await dl.save({filename:name,data:blob});toast('PNG berhasil diunduh');return}catch(e){if(e&&e.code==='declined')return}}
  $('pimg').src=URL.createObjectURL(blob);$('pdlg').showModal();
 };
 $('px').onclick=()=>$('pdlg').close();
