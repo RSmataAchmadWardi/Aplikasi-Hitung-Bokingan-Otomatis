@@ -90,6 +90,7 @@ dialog::backdrop{background:rgba(8,18,30,.6);backdrop-filter:blur(4px)}
 dialog img{width:min(320px,72vw);height:min(320px,72vw);border-radius:50%;box-shadow:0 0 0 6px var(--brand);display:block;margin:6px auto 20px}
 dialog h3{margin:0 0 14px;font-size:18px;font-weight:800}
 .err{background:color-mix(in srgb,var(--baksos) 12%,var(--card));border:1px solid var(--baksos);border-radius:14px;padding:10px 14px;font-size:13px;margin-bottom:12px;word-break:break-word}.err[hidden]{display:none}
+.sync{font-size:13px;font-weight:600;padding:8px 14px;border-radius:12px;background:var(--card);border:1px solid var(--line);color:var(--mute)}.sync[data-m=online]{color:var(--brand);border-color:var(--brand)}.sync[data-m=baca]{color:var(--baksos)}
 .acts{display:flex;gap:8px;flex-wrap:wrap}
 .btn.sm{width:auto;padding:10px 16px;font-size:14px}
 #pdlg img{width:min(620px,78vw);height:auto;border-radius:14px;box-shadow:0 0 0 1px var(--line);margin:0 auto 12px}
@@ -109,6 +110,7 @@ dialog h3{margin:0 0 14px;font-size:18px;font-weight:800}
   <button class="btn ghost" id="rf"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>Refresh ke 0</button>
 </header>
 
+<div class="sync" id="sync" data-m="lokal">Menghubungkan…</div>
 <div class="layout">
   <section class="hero">
     <div class="donut"><svg viewBox="0 0 42 42" id="dn" role="img" aria-label="Diagram donat komposisi pasien"></svg><div class="mid"><b id="mid">0</b><span>total pasien</span></div></div>
@@ -144,11 +146,43 @@ dialog h3{margin:0 0 14px;font-size:18px;font-weight:800}
 <script>
 const ICO={BPJS:'<path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/>',Asuransi:'<path d="M3 12a9 9 0 0 1 18 0z"/><path d="M12 12v6a2 2 0 0 0 4 0"/>',Umum:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',Baksos:'<path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2 4 4 0 0 1 7 2c0 5.5-7 10-7 10z"/>'};
 const CATS=[{k:'BPJS',c:'#12b886'},{k:'Asuransi',c:'#3b82f6'},{k:'Umum',c:'#f5a623'},{k:'Baksos',c:'#ef4d7a'}];
-let data=[],hist=[];
-const rec=a=>{const c={};CATS.forEach(x=>c[x.k]=0);a.forEach(d=>c[d.j]++);hist.push({t:Date.now(),c})};
-try{const s=localStorage.getItem('pasien-v2');if(s)data=JSON.parse(s)||[];const h=localStorage.getItem('rekap-v1');if(h)hist=JSON.parse(h)||[]}catch(e){}
 const $=id=>document.getElementById(id);
-const save=()=>{try{localStorage.setItem('pasien-v2',JSON.stringify(data));localStorage.setItem('rekap-v1',JSON.stringify(hist))}catch(e){}};
+const zero=()=>{const o={};CATS.forEach(c=>o[c.k]=0);return o};
+let batches=[],resetT=0,data=[],hist=[],CNT=zero(),db=null,CANW=true,loaded=false;
+const LS='batches-v3';
+const lsSave=()=>{try{localStorage.setItem(LS,JSON.stringify({batches,resetT}))}catch(e){}};
+function setSync(m){const e=$('sync');e.dataset.m=m;e.textContent={online:'Tersinkron: data tersimpan di server dan sama di semua perangkat.',lokal:'Mode lokal: data hanya tersimpan di perangkat ini (tidak sinkron).',baca:'Hanya lihat: akun ini tidak bisa mengubah data.'}[m]}
+function recompute(){
+ batches.sort((a,b)=>a.t-b.t);
+ hist=batches.map(b=>({t:b.t,c:b.c}));
+ const act=batches.filter(b=>!b.x&&b.t>resetT);
+ data=act.flatMap(b=>b.items||[]);
+ CNT=zero();act.forEach(b=>CATS.forEach(c=>CNT[c.k]+=b.c[c.k]||0));
+ render()}
+const store={
+ async add(b){if(db){try{await db.doc('batches/'+b.id).set(b);return true}catch(e){return false}}batches.push(b);lsSave();recompute();return true},
+ async reset(){const t=Date.now();if(db){try{await db.doc('meta/reset').set({t})}catch(e){toast('Gagal menyimpan, coba lagi')}return}resetT=t;lsSave();recompute()},
+ async clear(){if(db){try{await Promise.all(batches.map(b=>db.doc('batches/'+b.id).delete()))}catch(e){toast('Gagal menghapus, coba lagi')}return}batches=[];lsSave();recompute()}};
+async function migrate(){
+ let old=null;try{const s=localStorage.getItem('pasien-v2');if(s)old=JSON.parse(s)}catch(e){}
+ if(!old||!old.length)return;
+ try{if((await db.doc('meta/migrated').get()).exists)return;
+  await db.doc('meta/migrated').set({t:Date.now()});
+  const g={};old.forEach(d=>{(g[d.t]=g[d.t]||[]).push(d)});
+  for(const t of Object.keys(g)){const it=g[t],c=zero();it.forEach(d=>{if(c[d.j]!=null)c[d.j]++});
+   await db.doc('batches/m'+t).set({id:'m'+t,t:+t,c,items:it.map(d=>({n:d.n,j:d.j})),x:it.every(d=>d.a===false)})}
+  toast('Data lama di perangkat ini dipindahkan ke server')}catch(e){}}
+async function init(){
+ try{db=await claude.use('db')}catch(e){db=null}
+ if(db){
+  try{const u=await claude.use('user');if(u&&(await u.can('data.write'))===false)CANW=false}catch(e){}
+  setSync(CANW?'online':'baca');
+  if(CANW)await migrate();
+  db.collection('batches').onSnapshot(q=>{batches=q.docs.map(d=>d.data());recompute()},()=>{});
+  db.doc('meta/reset').onSnapshot(d=>{resetT=d.exists?(d.data().t||0):0;recompute()},()=>{});
+ }else{
+  try{const o=JSON.parse(localStorage.getItem(LS)||'null');if(o){batches=o.batches||[];resetT=o.resetT||0}}catch(e){}
+  setSync('lokal');recompute()}}
 function toast(t){const e=$('toast');e.textContent=t;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),1900)}
 function norm(t){t=(t||'').toLowerCase().trim();if(!t)return null;
  if(/bapelkes|posko|bpjsk|ketenagakerjaan|\btk\b/.test(t))return'Umum';
@@ -164,7 +198,7 @@ function parseLine(l){const p=l.split(/[,;\t|]/).map(s=>s.trim()).filter(Boolean
 function pcts(n,T){if(!T)return CATS.map(()=>0);const raw=CATS.map(c=>n[c.k]/T*100),fl=raw.map(Math.floor);let r=100-fl.reduce((a,b)=>a+b,0);
  raw.map((v,i)=>[v-fl[i],i]).sort((a,b)=>b[0]-a[0]).slice(0,r).forEach(([,i])=>fl[i]++);return fl}
 
-function counts(){const o={};CATS.forEach(c=>o[c.k]=0);data.forEach(d=>{if(d.a!==false)o[d.j]++});return o}
+function counts(){return Object.assign({},CNT)}
 const fd=t=>{const d=new Date(t);return[d.toLocaleDateString('id-ID',{day:'2-digit',month:'2-digit',year:'numeric'}),d.toLocaleDateString('id-ID',{weekday:'long'})]};
 $('today').textContent=new Date().toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 
@@ -186,18 +220,19 @@ const HDR=/list\s+pasien|\bno\.?\s*rm\b|\bnama\s+alamat\b/i;
 const esc=t=>String(t).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 function showErr(h){const e=$('err');e.innerHTML=h;e.hidden=!h}
 $('bulk').addEventListener('input',()=>{pend='';showErr('')});
-$('imp').onclick=()=>{const raw=$('bulk').value,L=raw.split('\n').map(s=>s.trim()).filter(Boolean);
+$('imp').onclick=async()=>{if(!CANW){toast('Akun ini hanya bisa melihat');return}const raw=$('bulk').value,L=raw.split('\n').map(s=>s.trim()).filter(Boolean);
  if(!L.length){toast('Tempel datanya dulu');$('bulk').focus();return}
  const ok=[],bad=[];let skip=0;L.forEach((l,i)=>{if(HDR.test(l)){skip++;return}const r=parseLine(l);r?ok.push(r):bad.push((i+1)+'. '+l)});
  if(bad.length){showErr('<b>'+bad.length+' baris tidak dikenali, belum ada yang dihitung.</b> Perbaiki lalu klik Hitung data lagi (format: nama, jenis):<br>'+bad.map(esc).join('<br>'));toast(bad.length+' baris tidak dikenali');return}
  if(!ok.length){toast('Tidak ada data pasien, '+skip+' baris judul diabaikan');return}
- const seen=new Set(data.filter(d=>d.a!==false).map(d=>d.n.toLowerCase()+'|'+d.j)),dup=[];
+ const seen=new Set(data.map(d=>d.n.toLowerCase()+'|'+d.j)),dup=[];
  ok.forEach(r=>{if(r.n==='Tanpa nama')return;const k=r.n.toLowerCase()+'|'+r.j;if(seen.has(k))dup.push(r.n+' ('+r.j+')');seen.add(k)});
  if(dup.length&&pend!==raw){pend=raw;showErr('<b>Ada nama ganda:</b> '+dup.map(esc).join(', ')+'.<br>Jika memang pasien berbeda, klik Hitung data sekali lagi.');toast('Cek nama ganda');return}
- const now=Date.now();ok.forEach(r=>data.push({n:r.n,j:r.j,t:now,a:true}));
- rec(data.slice(-ok.length));pend='';showErr('');$('bulk').value='';save();render();toast(ok.length+' pasien dihitung'+(skip?', '+skip+' baris judul diabaikan':''))};
-$('clr').onclick=()=>{if(hist.length&&confirm('Hapus seluruh riwayat rekap?')){hist=[];save();render()}};
-$('rf').onclick=()=>{if(!data.some(d=>d.a!==false)){toast('Angka sudah 0');return}data.forEach(d=>d.a=false);save();render();toast('Semua angka dikembalikan ke 0')};
+ const now=Date.now(),c=zero();ok.forEach(r=>c[r.j]++);
+ if(!(await store.add({id:'b'+now+Math.random().toString(36).slice(2,6),t:now,c,items:ok.map(r=>({n:r.n,j:r.j}))}))){toast('Gagal menyimpan, coba lagi');return}
+ pend='';showErr('');$('bulk').value='';toast(ok.length+' pasien dihitung'+(skip?', '+skip+' baris judul diabaikan':''))};
+$('clr').onclick=async()=>{if(!CANW){toast('Akun ini hanya bisa melihat');return}if(hist.length&&confirm('Hapus seluruh riwayat rekap? Angka di atas juga kembali 0.'))await store.clear()};
+$('rf').onclick=async()=>{if(!CANW){toast('Akun ini hanya bisa melihat');return}if(!data.length){toast('Angka sudah 0');return}await store.reset();toast('Semua angka dikembalikan ke 0')};
 $('lg').onclick=()=>{$('big').src=$('lg').querySelector('img').src;$('dlg').showModal()};
 $('dx').onclick=()=>$('dlg').close();
 $('dlg').onclick=e=>{if(e.target===$('dlg'))$('dlg').close()};
@@ -248,7 +283,7 @@ $('png').onclick=async()=>{
 };
 $('px').onclick=()=>$('pdlg').close();
 $('pdlg').onclick=e=>{if(e.target===$('pdlg'))$('pdlg').close()};
-render();
+render();init();
 </script>
 </body>
 </html>
