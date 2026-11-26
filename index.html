@@ -126,8 +126,7 @@ dialog h3{margin:0 0 14px;font-size:18px;font-weight:800}
   <section class="card in">
     <h2><span class="ic2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>Masukkan data</h2>
     <label for="bulk" class="hint" style="display:block;margin-top:10px">Satu pasien per baris, format nama lalu jenis.</label>
-    <textarea id="bulk" placeholder="Budi, BPJS&#10;Sari, Asuransi&#10;Andi, Baksos&#10;Dewi, Umum"></textarea>
-    <div class="tags"><i style="--c:#12b886">BPJS</i><i style="--c:#3b82f6">Asuransi</i><i style="--c:#f5a623">Umum</i><i style="--c:#ef4d7a">Baksos</i></div>
+    <textarea id="bulk" placeholder="Budi, BPJS&#10;Sari, Asuransi&#10;Andi, Baksos&#10;Dewi, Umum&#10;Rini, Dompet Dhuafa"></textarea>
     <div id="err" class="err" hidden></div><button class="btn" id="imp">Hitung data</button>
   </section>
 </div>
@@ -164,7 +163,7 @@ function recompute(){
  hist=batches.map(b=>({t:b.t,c:b.c}));
  CNT=zero();batches.filter(b=>b.t>resetT&&isToday(b.t)).forEach(b=>CATS.forEach(c=>CNT[c.k]+=b.c[c.k]||0));
  render()}
-function apply(st){batches=(st.batches||[]).sort((a,b)=>a.t-b.t);resetT=st.resetT||0;recompute();setSync('online','Tersinkron: data tersimpan di Google Sheets dan sama di semua HP.')}
+function apply(st){batches=(st.batches||[]).sort((a,b)=>a.t-b.t);resetT=st.resetT||0;recompute();setSync('online','Tersinkron pukul '+new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',timeZone:TZ})+'. Data tersimpan di Google Sheets dan sama di semua HP.')}
 const API='https://script.google.com/macros/s/AKfycby5O5HAQfXLouHPZWBtRvqlttALtNhxB0FuCP_pi1yfL1s7kn5KZQkKkNay1NEHOUhWuA/exec';
 const call=async(fn,...a)=>{const r=await fetch(API,{method:'POST',redirect:'follow',body:JSON.stringify({fn,pin:PIN,args:a})});const j=await r.json();if(!j.ok)throw new Error(j.error||'Gagal');return j.data};
 function ensurePin(){if(!PIN){const p=prompt('Masukkan PIN aplikasi');if(!p)return false;PIN=p.trim();try{localStorage.setItem(PINK,PIN)}catch(e){}}return true}
@@ -178,30 +177,49 @@ async function rpc(fn,...a){
 async function refresh(){const st=await rpc('getState');if(st)apply(st)}
 const store={
  async add(c){const st=await rpc('addBatch',c);if(!st)return false;apply(st);return true},
- async reset(){const st=await rpc('resetCounts');if(st)apply(st)},
- async clear(){const st=await rpc('clearAll');if(st)apply(st)}};
+ async reset(){const st=await rpc('resetCounts');if(st){apply(st);forget()}},
+ async clear(){const st=await rpc('clearAll');if(st){apply(st);forget()}}};
 function init(){if(API.indexOf('http')!==0){setSync('baca','Alamat server belum diisi: ganti PASTE_URL_WEB_APP_DI_SINI di index.html dengan URL Web app Anda.');return}setSync('lokal','Menghubungkan…');refresh();
  setInterval(()=>{if(PIN&&!document.hidden&&!busy)refresh()},10000);
  document.addEventListener('visibilitychange',()=>{if(PIN&&!document.hidden&&!busy)refresh()})}
 function toast(t){const e=$('toast');e.textContent=t;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),1900)}
 /* Jenis dikenali per KATA (bukan potongan huruf), jadi "Basuki" tidak lagi terbaca Asuransi */
 const SPECIAL_UMUM=/\b(bapelkes|posko|bpjsk|ketenagakerjaan|tk)\b/;
-const RULES=[['BPJS',/\b(bpjs|jkn|kis)\b/],['Asuransi',/\b(asu\w*|insur\w*|swasta|prudential|allianz|admedika|inhealth)\b/],['Baksos',/\b(baks\w*|bakti\s+sosial|sosial|gratis)\b/],['Umum',/\b(umum|pribadi|cash|tunai)\b/]];
+const RULES=[['BPJS',/\b(bpjs|jkn|kis|pbi)\b/],['Asuransi',/\b(asu\w*|insur\w*|swasta|prudential|allianz|admedika|inhealth)\b/],['Baksos',/\b(baks\w*|bakti\s+sosial|sosial|gratis|dompet|dhu\s*a+\s*f\w*|du\s*a+\s*f\w*|dd)\b/],['Umum',/\b(umum|pribadi|cash|tunai)\b/]];
 /* hasil: nama jenis, null (tidak dikenal) atau '?' (cocok lebih dari satu jenis) */
 function norm(t){t=(t||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();if(!t)return null;
  if(SPECIAL_UMUM.test(t))return'Umum';
  const hit=RULES.filter(([,re])=>re.test(t)).map(r=>r[0]);
  return hit.length===1?hit[0]:hit.length>1?'?':null}
-function parseLine(l){l=l.replace(/^\s*(?:\d+\s*[.)]|[-\u2022*])\s+/,'');/* buang nomor urut / bullet */
- const p=l.split(/[,;\t|]/).map(s=>s.trim()).filter(Boolean);let j=null,nm='';
- if(p.length>1){j=norm(p[p.length-1]);nm=p.slice(0,-1).join(', ')}
- else{const w=l.trim().split(/\s+/);
-  if(w.length===1){j=norm(w[0])}
+function clean(l){return l.normalize('NFKC').replace(/[\u00a0\u200b-\u200d\ufeff]/g,' ').replace(/[，；]/g,',').replace(/\s+/g,' ').trim()}
+/* Pengecekan salah ketik: hanya jadi DUGAAN (ditandai kuning di layar periksa), tidak pernah diam-diam dianggap benar */
+const KEYS={bpjs:'BPJS',asuransi:'Asuransi',swasta:'Asuransi',baksos:'Baksos',umum:'Umum',pribadi:'Umum',tunai:'Umum'};
+function lev(a,b){const m=a.length,n=b.length,d=[];for(let i=0;i<=m;i++)d[i]=[i];for(let j=1;j<=n;j++)d[0][j]=j;
+ for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[m][n]}
+function fuzzy(t){const hit=new Set();t.toLowerCase().replace(/[^a-z\s]/g,' ').split(/\s+/).filter(w=>w.length>=4).forEach(w=>{for(const k in KEYS)if(lev(w,k)<=(k.length>=7?2:1))hit.add(KEYS[k])});return hit.size===1?[...hit][0]:null}
+function parseLine(l0){
+ let l=clean(l0).replace(/^(?:\d+\s*[.)]|[-\u2022*])\s+/,'').replace(/[()]/g,',');
+ const p=l.split(/\s*[,;\t|:]\s*|\s+[-\u2013\u2014]\s+/).map(x=>x.trim()).filter(Boolean);
+ let j=null,nm='',g=false;
+ if(!p.length)return null;
+ if(p.length>1){
+  const head=p.slice(0,-1);
+  j=norm(p[p.length-1]);
+  if(head.some(x=>{const r=norm(x);return r&&r!==j}))return{n:head.join(', '),j:null,amb:true};/* dua jenis berbeda dalam satu baris */
+  nm=head.join(', ').replace(/(^|,\s*)(bpjs|jkn|kis|non)$/i,'');
+  if(!j){const f=fuzzy(p[p.length-1]);if(f){j=f;g=true}}
+ }else{
+  const w=l.split(/\s+/),last=w[w.length-1],jl=norm(last);
+  if(w.length===1){j=jl}
+  else if(w.length===2&&/^dompet$/i.test(w[0])&&norm(w[0]+' '+w[1])){j=norm(w[0]+' '+w[1])}
+  else if(jl&&jl!=='?'){j=jl;nm=w.slice(0,-1).join(' ').replace(/\s+(dompet|bakti|bpjs|non)$/i,'');if(/^(bpjs|jkn|kis|non|dompet|bakti)$/i.test(nm))nm=''}
   else{j=w.length>2?norm(w.slice(-2).join(' ')):null;
    if(j&&j!=='?'){nm=w.slice(0,-2).join(' ')}
-   else{const j1=norm(w[w.length-1]);if(j1){j=j1;nm=w.slice(0,-1).join(' ')}}}}
+   else{j=jl;if(j)nm=w.slice(0,-1).join(' ')}}
+  if(!j){const f=fuzzy(last);if(f){j=f;g=true;nm=w.slice(0,-1).join(' ')}}
+ }
  if(j==='?')return{n:nm,j:null,amb:true};
- return j?{n:nm||'Tanpa nama',j}:null}
+ return j?{n:nm||'Tanpa nama',j,g}:null}
 function pcts(n,T){if(!T)return CATS.map(()=>0);const raw=CATS.map(c=>n[c.k]/T*100),fl=raw.map(Math.floor);let r=100-fl.reduce((a,b)=>a+b,0);
  raw.map((v,i)=>[v-fl[i],i]).sort((a,b)=>b[0]-a[0]).slice(0,r).forEach(([,i])=>fl[i]++);return fl}
 
@@ -227,21 +245,41 @@ const HDR=/list\s+pasien|\bno\.?\s*rm\b|\bnama\s+alamat\b/i;
 const esc=t=>String(t).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 function showErr(h){const e=$('err');e.innerHTML=h;e.hidden=!h}
 $('bulk').addEventListener('input',()=>{pend='';showErr('')});
-$('imp').onclick=async()=>{if(busy)return;if(!CANW){toast('Akun ini hanya bisa melihat');return}const raw=$('bulk').value,L=raw.split('\n').map(s=>s.trim()).filter(Boolean);
+const nk=n=>n.toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim();
+const NK='pin-bokingan-names',rk=r=>nk(r.n)+'|'+r.j,sumC=o=>Object.values(o).reduce((a,b)=>a+b,0);
+function seenToday(){try{const o=JSON.parse(localStorage.getItem(NK)||'{}');return o.d===dayKey(Date.now())?new Set(o.s||[]):new Set()}catch(e){return new Set()}}
+function remember(ok){try{const s=seenToday();ok.forEach(r=>{if(r.n!=='Tanpa nama')s.add(rk(r))});localStorage.setItem(NK,JSON.stringify({d:dayKey(Date.now()),s:[...s]}))}catch(e){}}
+function forget(){try{localStorage.removeItem(NK)}catch(e){}}
+$('imp').onclick=()=>{if(busy)return;if(!CANW){toast('Akun ini hanya bisa melihat');return}
+ const raw=$('bulk').value,L=raw.split('\n').map(s=>s.trim()).filter(Boolean);
  if(!L.length){toast('Tempel datanya dulu');$('bulk').focus();return}
- const ok=[],bad=[];let skip=0;L.forEach((l,i)=>{if(HDR.test(l)){skip++;return}const r=parseLine(l);r&&r.j?ok.push(r):bad.push((i+1)+'. '+l+(r&&r.amb?'  [jenis ambigu, tulis satu jenis saja]':''))});
+ const ok=[],bad=[];let skip=0;
+ L.forEach((l,i)=>{if(HDR.test(l)){skip++;return}const r=parseLine(l);r&&r.j?ok.push(r):bad.push((i+1)+'. '+l+(r&&r.amb?'  [jenis ambigu atau lebih dari satu, tulis satu jenis saja]':''))});
  if(bad.length){showErr('<b>'+bad.length+' baris tidak dikenali, belum ada yang dihitung.</b> Perbaiki lalu klik Hitung data lagi (format: nama, jenis):<br>'+bad.map(esc).join('<br>'));toast(bad.length+' baris tidak dikenali');return}
  if(!ok.length){toast('Tidak ada data pasien, '+skip+' baris judul diabaikan');return}
- const nk=n=>n.toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim();
- const seen=new Map(),dup=[],conf=[];
- ok.forEach(r=>{if(r.n==='Tanpa nama')return;const k=nk(r.n);if(!k)return;
-  if(seen.has(k)){const pv=seen.get(k);pv===r.j?dup.push(r.n.slice(0,40)):conf.push(r.n.slice(0,40)+' ('+pv+' & '+r.j+')')}else seen.set(k,r.j)});
- if((dup.length||conf.length)&&pend!==raw){pend=raw;
-  showErr((dup.length?'<b>Nama ganda dengan jenis sama:</b> '+dup.map(esc).join('; ')+'.<br>':'')+(conf.length?'<b>Nama sama tetapi jenis berbeda:</b> '+conf.map(esc).join('; ')+'.<br>':'')+'Jika memang pasien berbeda, klik Hitung data sekali lagi.');toast('Cek baris ganda');return}
+ showErr('');
+ /* tandai baris yang perlu dicek */
+ const cnt=new Map(),jn=new Map(),old=seenToday();
+ ok.forEach(r=>{if(r.n==='Tanpa nama')return;const k=nk(r.n);if(!k)return;cnt.set(k,(cnt.get(k)||0)+1);(jn.get(k)||jn.set(k,new Set()).get(k)).add(r.j)});
+ ok.forEach(r=>{const nt=[];
+  if(r.g)nt.push('Dugaan jenis, cek ejaan');
+  if(r.n==='Tanpa nama')nt.push('Tanpa nama');
+  else{const k=nk(r.n);if(cnt.get(k)>1)nt.push(jn.get(k).size>1?'Nama sama, jenis beda':'Nama ganda');if(old.has(rk(r)))nt.push('Sudah dimasukkan hari ini')}
+  r.note=nt.join('; ')});
  const c=zero();ok.forEach(r=>c[r.j]++);
- busy=true;$('imp').disabled=true;let good=false;try{good=await store.add(c)}finally{busy=false;$('imp').disabled=false}
+ /* langsung disimpan; hanya berhenti sekali bila ada baris mencurigakan (ganda / dugaan ejaan / sudah masuk hari ini) */
+ const fl=ok.filter(r=>r.note&&r.note!=='Tanpa nama');
+ if(fl.length&&pend!==raw){pend=raw;
+  showErr('<b>'+fl.length+' baris perlu dicek:</b><br>'+fl.slice(0,12).map(r=>esc(r.n.slice(0,60))+' ('+esc(r.note)+')').join('<br>')+(fl.length>12?'<br>…':'')+'<br>Jika sudah benar, klik Hitung data sekali lagi.');toast(fl.length+' baris perlu dicek');return}
+ pend='';save(ok,c,skip,raw)};
+async function save(ok,c,skip,raw){
+ busy=true;$('imp').disabled=true;let good=false,before=0;
+ try{await refresh();before=sumC(CNT);good=await store.add(c)}finally{busy=false;$('imp').disabled=false}
  if(!good){showErr('<b>Koneksi gagal.</b> Cek tabel Riwayat dulu sebelum klik lagi, supaya data tidak terhitung dua kali.');refresh();return}
- pend='';showErr('');if($('bulk').value===raw)$('bulk').value='';toast(ok.length+' pasien dihitung'+(skip?', '+skip+' baris judul diabaikan':''))};
+ remember(ok);if($('bulk').value===raw)$('bulk').value='';
+ const gain=sumC(CNT)-before;
+ showErr(gain===ok.length?'':'<b>Mohon cek Riwayat:</b> total hari ini bertambah '+gain+', seharusnya '+ok.length+'. Bisa terjadi bila HP lain memasukkan data bersamaan atau tanggal berganti.');
+ toast(ok.length+' pasien dihitung'+(skip?', '+skip+' baris judul diabaikan':''))}
 $('clr').onclick=async()=>{if(hist.length&&confirm('Hapus seluruh riwayat rekap? Angka di atas juga kembali 0.'))await store.clear()};
 $('rf').onclick=async()=>{if(!Object.values(CNT).some(v=>v)){toast('Angka sudah 0');return}await store.reset();toast('Semua angka dikembalikan ke 0')};
 $('lg').onclick=()=>{$('big').src=$('lg').querySelector('img').src;$('dlg').showModal()};
